@@ -20,14 +20,15 @@ még **nem** lefedett részeket rögzíti — kiegészítésként a
 | 9 | SRT/VTT export | ✅ | Unit teszt szintetikus transcript-tel | — |
 | 10 | Enrollment-tároló (fájl-alapú CRUD, futó-átlagos frissítés) | ✅ | Unit teszt szintetikus vektorokkal, `path traversal` elleni védelem is | — |
 | 11 | Enrollment cos-sim egyeztetés logikája | ✅ | Unit teszt (`cosine_similarity`), de csak szintetikus, nem valós hang-embeddinggel | — |
-| 12 | **Diarizáció** (`pyannote`, több beszélő szétválasztása) | ❌ | — | Érvényes `HF_TOKEN` a `pyannote/speaker-diarization-3.1`-hez, **és** egy **legalább 2, ismert/megkülönböztethető beszélőt tartalmazó, legalább 3–5 perces** felvétel (rövidebbön a diarizáció minőségét nehéz megítélni; legyen benne mindkét beszélőtől néhány önálló, egymást nem átfedő megszólalás is, ne csak folyamatos átfedés) |
-| 13 | **Enrollment végponttól-végpontig** (regisztrált hang felismerése egy másik felvételben) | ❌ | — | Legalább **2 különböző ember tiszta, kb. 2–5 perces hangmintája** (`POST /v1/speakers`-hez) **+** egy **harmadik, ezektől eltérő tesztfelvétel**, amiben mindkét regisztrált hang elhangzik (ideális esetben egy **harmadik, nem regisztrált** beszélő hangjával keverve, hogy az "idegen hang helyesen marad anonim" eset is ellenőrizhető legyen) |
+| 12 | **Diarizáció** (`pyannote`, több beszélő szétválasztása) | ❌ | Az `eval/run_comparison.py` eszköz maga már ✅ (ld. 6. pont), csak valódi diarizációs adat hiányzik alá | Érvényes `HF_TOKEN` a `pyannote/speaker-diarization-3.1`-hez, **és** egy **legalább 2, ismert/megkülönböztethető beszélőt tartalmazó, legalább 3–5 perces** felvétel + hozzá ground truth JSON (ld. 6. pont sémája) — ezzel az `eval/run_comparison.py --mode both` egyből lefuttatható |
+| 13 | **Enrollment végponttól-végpontig** (regisztrált hang felismerése egy másik felvételben) | ❌ | Az összehasonlító eszköz ezt is méri (`speaker_accuracy`), csak valódi enrollment-profil hiányzik | Legalább **2 különböző ember tiszta, kb. 2–5 perces hangmintája** (`POST /v1/speakers`-hez) **+** egy **harmadik, ezektől eltérő tesztfelvétel**, amiben mindkét regisztrált hang elhangzik (ideális esetben egy **harmadik, nem regisztrált** beszélő hangjával keverve, hogy az "idegen hang helyesen marad anonim" eset is ellenőrizhető legyen) |
 | 14 | Élő (streaming, WS) mód valós hangforrással | ❌ | — | Egy egyszerű kliens-szkript, ami egy hangfájlt valós idejű ütemben, PCM16/16kHz/mono chunkokban küld a `WS /v1/transcribe/stream`-re, és méri a `final_segment` megérkezéséig eltelt időt a beszéd végétől számítva |
 | 15 | Teljes `docker build` a végleges `requirements.txt`-tel (torch+pyannote+speechbrain együtt) | ❌ | Csak a `webrtcvad`-részlet lett izoláltan ellenőrizve (ld. 2.2) | Egy gép/CI-futó, aminek elég memóriája van, és semmi más nehéz folyamat nem fut rajta párhuzamosan a build alatt |
 | 16 | `docker compose up` — a ténylegesen felépített konténer(ek) indítása és hívása | ❌ | Csak `docker compose config` (syntaktikai) validálás történt | A #15 sikeres build után egy tényleges `docker compose up` + `curl` a felépült konténer ellen |
 | 17 | GPU-s futtatás (`DIARIZATION_DEVICE=cuda`/`EMBEDDING_DEVICE=cuda`) | ❌ | — | Egy CUDA-képes gép/konténer `nvidia-container-toolkit`-tel |
 | 18 | Több worker-replika + megosztott enrollment-tároló egyidejű írása | ❌ | — | 2 futó worker-példány, ugyanarra a megosztott `ENROLLMENT_STORE_PATH`-ra mutatva, egyidejű `POST /v1/speakers` hívásokkal ugyanarra a névre (ld. [`tradeoffs_and_decisions.md`](tradeoffs_and_decisions.md) 4.6 — ismert race condition, ezt kellene ténylegesen reprodukálni/megmérni) |
 | 19 | Terhelés/konkurrencia (több egyidejű `/v1/transcribe` hívás, nem blokkolja-e egymást) | ❌ | — | Egy egyszerű terhelés-teszt (pl. `hey`/`wrk`/`locust`) néhány párhuzamos kéréssel, mérve, hogy a válaszidő nem nő-e lineárisan a konkurrens kérések számával (ez igazolná az `asyncio.to_thread`-es nem-blokkoló dizájnt ténylegesen, nem csak elméletben) |
+| 20 | Összehasonlító/kiértékelő eszköz maga (`eval/run_comparison.py`) — WER/CER + beszélő-attribúciós pontosság, baseline vs. batch vs. élő | ✅ | Unit tesztek (`tests/test_eval_metrics.py`) + teljes CLI-futtatás szintetikus 2-beszélős klipen, valós ASR-végponttal, mindhárom módban (baseline/batch/élő), JSON-riport-írással együtt (ld. 6. pont) | — |
 
 ## 1. Mit teszteltünk
 
@@ -196,3 +197,64 @@ Két reális út, HF-token nélkül is elkezdhető:
    ellenőrizhető, hogy a cos-sim egyezés a `EMBEDDING_SIMILARITY_THRESHOLD`
    (alapértelmezett 0.75) fölé kerül-e. Ez a speechbrain (nem gated) embedding-
    gel is elvégezhető, tehát HF-token nélkül is megkezdhető.
+
+## 6. Összehasonlító/kiértékelő eszköz (`eval/run_comparison.py`)
+
+Elkészült egy tartós, a repo része maradó CLI-eszköz, ami pontosan az 5.
+pontban felvázolt kérdésre ad **mérhető, megismételhető** választ: javított-e
+a pipeline (a) a leirat pontosságán (WER/CER) és (b) a beszélők
+megkülönböztetésén, **mind a "csak a nyers ASR-végpont" alapesethez képest,
+mind batch ÉS élő (szimulált streaming) módban**.
+
+```bash
+python -m eval.run_comparison --audio meeting.wav --ground-truth truth.json
+python -m eval.run_comparison --audio meeting.wav --ground-truth truth.json --mode live
+python -m eval.run_comparison --audio meeting.wav   # ground truth nélkül: csak kvalitatív diff
+```
+
+**Ground truth formátum** (megegyezik a README-ben már hivatkozott
+`meeting-audio-forge` kimenetével, tehát onnan közvetlenül átvehető):
+```json
+{"speakers": ["Alice", "Bob"],
+ "turns": [{"speaker": "Alice", "text": "...", "start": 0.0, "end": 4.2}]}
+```
+
+**Amit mér, rendszerenként** (`baseline` = egyetlen, teljes fájlos ASR-hívás,
+diarizáció nélkül; `pipeline (batch)`; `pipeline (élő, szimulált)` — az
+utóbbi a valódi `StreamingSession`-t hajtja végre, fix méretű PCM16
+chunkokkal etetve, opcionális `--realtime` kapcsolóval valós idejű
+késleltetés-méréshez):
+- **WER / CER** a ground truth teljes szövegéhez képest.
+- **Beszélő-attribúciós pontosság**: a referencia-beszélők és a
+  predikált címkék (enrollment-tal ellátott szegmenseknél a valós név, egyébként
+  az anonim `SPEAKER_NN` id) közötti, időbeli átfedés alapján optimális
+  párosítást keres (kis beszélőszámra kimerítő permutáció, nagyobbra mohó
+  fallback), majd megadja, a referencia-beszédidő hány százaléka lett
+  helyesen hozzárendelve.
+- Ha nincs ground truth: nincs pontszám, de a `baseline` és a `pipeline
+  (batch)` szövege között szó-szintű diffet ad, hogy legalább kvalitatívan
+  látszódjon, mi változott.
+- `--out riport.json`: minden rendszer teljes kimenete (szegmensek,
+  időbélyegek, pontszámok) gépi feldolgozásra is elmentve.
+
+**Smoke-teszt** (ezzel a munkakörnyezettel, HF-token nélkül): két,
+`espeak-ng`-vel szintetizált, egymástól jól elkülönülő magyar hang
+összefűzésével és egy hozzá tartozó ground truth-tal a teljes CLI (baseline +
+batch + élő szimuláció) hiba nélkül lefutott, ténylegesen elérte és helyesen
+hívta a valós ASR-végpontot, és helyes WER/CER/beszélő-accuracy számokat
+adott — ez igazolja, hogy **maga az eszköz** helyesen működik. A ténylegesen
+mért beszélő-accuracy ezzel a `DIARIZATION_BACKEND=none` beállítással
+(HF-token hiányában) alacsony és a baseline-hoz hasonló volt — ez **várt**,
+hiszen diarizáció nélkül a pipeline sem tud jobb beszélő-szétválasztást adni,
+mint az alapeset. A valódi "javított-e" kérdés megválaszolásához a #12/#13
+pontban leírt HF-token + valós többbeszélős felvétel szükséges.
+
+**Mellékesen felfedezett, dokumentálásra érdemes jellemző:** nagyon apró
+(pl. 20 ms-os) szimulált chunk-méret mellett az élő mód lassabb, mint
+elsőre várnánk, mert a `StreamingSession` minden egyes chunk-nál újra lefuttatja
+a VAD-ot a **teljes addig felgyűlt pufferen** (nincs inkrementális VAD-állapot).
+Ez a `STREAMING_WINDOW_SECONDS` (alapértelmezett 8s) által korlátozva marad,
+tehát nem nő korlátlanul, de real-time szimulációnál érdemes nagyobb
+`--chunk-ms`-t használni (pl. 100–200 ms, ami egy valós mikrofon-kliens
+tipikus csomagmérete is), hogy a mérés ne a szimuláció saját overhead-jét,
+hanem a pipeline tényleges viselkedését tükrözze.
