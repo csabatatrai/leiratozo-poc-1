@@ -1,0 +1,12 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+venv
+*.egg-info
+.env
+data/
+tests/
+examples/mock_asr_server/__pycache__

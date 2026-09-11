@@ -1,0 +1,52 @@
+# Local dev / demo stack: the worker + a fake ASR endpoint so the whole
+# pipeline runs end-to-end without a GPU or a real model. In production,
+# point ASR_ENDPOINT_URL at a real deployment (openai/whisper-large-v3 or
+# any other model behind an OpenAI-compatible endpoint) and drop the
+# mock-asr service entirely — the worker has zero knowledge of which one
+# it's talking to.
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ASR_ENDPOINT_URL: "http://mock-asr:9000/v1"
+    volumes:
+      - speaker-profiles:/data/speaker_profiles
+      - hf-cache:/data/hf-cache
+    depends_on:
+      mock-asr:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    # Horizontal scaling: run N replicas of this service behind a load
+    # balancer/ingress. Each replica loads its own copy of the diarization
+    # /embedding models into memory (that's WHY app.main.py loads them once
+    # at process start and Dockerfile CMD uses --workers 1 — one model copy
+    # per container, scale via container count, not in-process workers).
+    # The one piece of state that then needs to be shared across replicas
+    # is enrolled speaker profiles: either mount `speaker-profiles` from a
+    # real network volume (NFS/EFS/...) instead of a local docker volume,
+    # or swap ENROLLMENT_STORE_BACKEND for a future DB-backed store — the
+    # SpeakerProfileStore interface (app/core/interfaces.py) was designed
+    # so that swap needs no API/pipeline changes.
+    deploy:
+      replicas: 1
+
+  mock-asr:
+    build:
+      context: examples/mock_asr_server
+    ports:
+      - "9000:9000"
+
+volumes:
+  speaker-profiles:
+  hf-cache:
