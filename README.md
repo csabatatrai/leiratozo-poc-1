@@ -111,13 +111,13 @@ késleltetésű, de VAD-only részleges-eredmény minőségű alternatíva.
 
 ```mermaid
 flowchart LR
-    subgraph Külső hívók
+    subgraph EXT["Külső hívók"]
         C1["Hívó szolgáltatás<br/>(pl. meeting-recorder / UI)"]
         C2["Élő hangforrás<br/>(pl. Jitsi SFU kimenet, mikrofon)"]
         C3["Admin/HR folyamat<br/>(hangprofil-regisztráció)"]
     end
 
-    subgraph Worker["meeting-speaker-adaptation (Docker konténer)"]
+    subgraph WORKER["meeting-speaker-adaptation (Docker konténer)"]
         H["POST /v1/transcribe<br/>fájl-be → JSON/SRT/VTT-ki"]
         S["WS /v1/transcribe/stream<br/>PCM16-be → StreamEvent-ki"]
         E1["POST /v1/speakers<br/>hangprofil regisztráció"]
@@ -127,7 +127,7 @@ flowchart LR
         CFG["GET /v1/config"]
     end
 
-    subgraph Külső, konfigurálható függőségek
+    subgraph DEPS["Külső, konfigurálható függőségek"]
         ASR[("ASR végpont<br/>ASR_ENDPOINT_URL<br/>bármilyen modell")]
         VOL[("Enrollment store<br/>ENROLLMENT_STORE_PATH")]
     end
