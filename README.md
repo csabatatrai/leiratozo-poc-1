@@ -207,12 +207,13 @@ sequenceDiagram
             Store-->>-API: eredmény
             API->>+ASR: transcribe(szegmensek)
             ASR-->>-API: szövegek
-            API-->>-Consumer: {type: final_segment}
+            API-->>Consumer: {type: final_segment}
         else beszéd folyamatban
             API->>+ASR: gyors ASR a farok-részre
             ASR-->>-API: részleges szöveg
-            API-->>-Consumer: {type: partial_segment}
+            API-->>Consumer: {type: partial_segment}
         end
+        deactivate API
     end
     Consumer->>+API: kapcsolat bontása
     API-->>-Consumer: {type: closed}
