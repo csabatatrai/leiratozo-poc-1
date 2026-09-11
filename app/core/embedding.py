@@ -70,7 +70,7 @@ class SpeechBrainEcapaExtractor(EmbeddingExtractor):
             from speechbrain.inference.speaker import EncoderClassifier
 
             self._classifier = EncoderClassifier.from_hparams(
-                source="speechbrain/spkrec-ecapa-voxceleb",
+                source=self.settings.model,
                 run_opts={"device": self.settings.device},
             )
         return self._classifier

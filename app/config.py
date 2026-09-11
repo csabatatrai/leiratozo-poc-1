@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Literal, Optional
 
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -94,6 +94,17 @@ class EmbeddingSettings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(env_prefix="EMBEDDING_")
+
+    @model_validator(mode="after")
+    def _default_model_per_backend(self) -> "EmbeddingSettings":
+        # `model`'s class-level default matches the default backend
+        # (pyannote_embedding). If someone switches EMBEDDING_BACKEND to
+        # speechbrain_ecapa without also setting EMBEDDING_MODEL, fall back
+        # to that backend's own default instead of reporting a pyannote
+        # model name for a speechbrain model in ModelInfo.
+        if self.backend == "speechbrain_ecapa" and self.model == "pyannote/embedding":
+            self.model = "speechbrain/spkrec-ecapa-voxceleb"
+        return self
 
 
 class EnrollmentStoreSettings(BaseSettings):

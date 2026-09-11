@@ -12,6 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 FROM base AS deps
 WORKDIR /build
+# gcc/python3-dev: webrtcvad (default VAD_BACKEND) compiles a native
+# extension on install. Build-only — this stage's apt layer is discarded,
+# only the resulting site-packages get copied into the runtime image below.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 # CPU wheels by default (portable, no CUDA base image required). For a GPU
 # build: docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .

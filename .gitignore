@@ -6,3 +6,8 @@ venv/
 .pytest_cache/
 data/
 *.egg-info/
+
+# Local test audio (recordings can be large and are not part of the repo)
+*.wav
+*.mp3
+*.m4a
