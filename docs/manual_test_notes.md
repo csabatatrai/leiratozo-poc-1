@@ -5,6 +5,30 @@ tesztkörének tapasztalatait, az így talált hibákat és javításokat, valam
 még **nem** lefedett részeket rögzíti — kiegészítésként a
 [`tradeoffs_and_decisions.md`](tradeoffs_and_decisions.md) tervezési döntéseihez.
 
+## 0. Gyors áttekintés — mi van már tesztelve
+
+| # | Terület | Állapot | Mivel/hogyan lett igazolva | Ha ❌ — mi kell a teszteléséhez |
+|---|---|---|---|---|
+| 1 | ASR-adapter valós, idegen végponttal (`generic` backend) | ✅ | Valós `/transcribe` végpont, saját `GenericAsrClient` kóddal, szintetizált + valós hangon (ld. 1.1, 1.2) | — |
+| 2 | Audio-dekódolás (ffmpeg, tetszőleges formátum/mintavételi ráta) | ✅ | 44.1kHz sztereó, 153 MB-os valós WAV helyesen dekódolva 16kHz monóra | — |
+| 3 | VAD (csend levágása) | ✅ | `silero` backenddel, valós felvételen (elejéről/végéről helyesen vágott) | — |
+| 4 | VAD (`webrtcvad`, az alapértelmezett) | ✅ | Csak izolált Docker-build szinten (natív fordítás gcc-vel) — futásidejű viselkedés nem lett külön ellenőrizve | Egy tényleges pipeline-futtatás `VAD_BACKEND=webrtcvad`-dal (ehhez elég egy gcc-vel rendelkező gép/konténer) |
+| 5 | Beszélő-embedding kinyerés (`speechbrain_ecapa`) | ✅ | Valós 15 perces felvételen, hibátlanul lefutott | — |
+| 6 | Beszélő-embedding kinyerés (`pyannote_embedding`, az alapértelmezett) | ❌ | — | Érvényes `HF_TOKEN` + a `pyannote/embedding` licenc elfogadása a HuggingFace oldalán |
+| 7 | Batch pipeline vég-az-végig (decode → VAD → embedding → enrollment-match → ASR → összefésülés) | ✅ | Teljes 911.8s valós felvétel, 301.4s alatt, hibátlan kimenettel (ld. 1.2) | — |
+| 8 | Kimeneti JSON-séma (`Transcript`, `TranscriptSegment` stb.) | ✅ | Unit tesztek + a valós futtatás kimenetének kézi ellenőrzése | — |
+| 9 | SRT/VTT export | ✅ | Unit teszt szintetikus transcript-tel | — |
+| 10 | Enrollment-tároló (fájl-alapú CRUD, futó-átlagos frissítés) | ✅ | Unit teszt szintetikus vektorokkal, `path traversal` elleni védelem is | — |
+| 11 | Enrollment cos-sim egyeztetés logikája | ✅ | Unit teszt (`cosine_similarity`), de csak szintetikus, nem valós hang-embeddinggel | — |
+| 12 | **Diarizáció** (`pyannote`, több beszélő szétválasztása) | ❌ | — | Érvényes `HF_TOKEN` a `pyannote/speaker-diarization-3.1`-hez, **és** egy **legalább 2, ismert/megkülönböztethető beszélőt tartalmazó, legalább 3–5 perces** felvétel (rövidebbön a diarizáció minőségét nehéz megítélni; legyen benne mindkét beszélőtől néhány önálló, egymást nem átfedő megszólalás is, ne csak folyamatos átfedés) |
+| 13 | **Enrollment végponttól-végpontig** (regisztrált hang felismerése egy másik felvételben) | ❌ | — | Legalább **2 különböző ember tiszta, kb. 2–5 perces hangmintája** (`POST /v1/speakers`-hez) **+** egy **harmadik, ezektől eltérő tesztfelvétel**, amiben mindkét regisztrált hang elhangzik (ideális esetben egy **harmadik, nem regisztrált** beszélő hangjával keverve, hogy az "idegen hang helyesen marad anonim" eset is ellenőrizhető legyen) |
+| 14 | Élő (streaming, WS) mód valós hangforrással | ❌ | — | Egy egyszerű kliens-szkript, ami egy hangfájlt valós idejű ütemben, PCM16/16kHz/mono chunkokban küld a `WS /v1/transcribe/stream`-re, és méri a `final_segment` megérkezéséig eltelt időt a beszéd végétől számítva |
+| 15 | Teljes `docker build` a végleges `requirements.txt`-tel (torch+pyannote+speechbrain együtt) | ❌ | Csak a `webrtcvad`-részlet lett izoláltan ellenőrizve (ld. 2.2) | Egy gép/CI-futó, aminek elég memóriája van, és semmi más nehéz folyamat nem fut rajta párhuzamosan a build alatt |
+| 16 | `docker compose up` — a ténylegesen felépített konténer(ek) indítása és hívása | ❌ | Csak `docker compose config` (syntaktikai) validálás történt | A #15 sikeres build után egy tényleges `docker compose up` + `curl` a felépült konténer ellen |
+| 17 | GPU-s futtatás (`DIARIZATION_DEVICE=cuda`/`EMBEDDING_DEVICE=cuda`) | ❌ | — | Egy CUDA-képes gép/konténer `nvidia-container-toolkit`-tel |
+| 18 | Több worker-replika + megosztott enrollment-tároló egyidejű írása | ❌ | — | 2 futó worker-példány, ugyanarra a megosztott `ENROLLMENT_STORE_PATH`-ra mutatva, egyidejű `POST /v1/speakers` hívásokkal ugyanarra a névre (ld. [`tradeoffs_and_decisions.md`](tradeoffs_and_decisions.md) 4.6 — ismert race condition, ezt kellene ténylegesen reprodukálni/megmérni) |
+| 19 | Terhelés/konkurrencia (több egyidejű `/v1/transcribe` hívás, nem blokkolja-e egymást) | ❌ | — | Egy egyszerű terhelés-teszt (pl. `hey`/`wrk`/`locust`) néhány párhuzamos kéréssel, mérve, hogy a válaszidő nem nő-e lineárisan a konkurrens kérések számával (ez igazolná az `asyncio.to_thread`-es nem-blokkoló dizájnt ténylegesen, nem csak elméletben) |
+
 ## 1. Mit teszteltünk
 
 ### 1.1 ASR-adapter valódi, külső végponttal
