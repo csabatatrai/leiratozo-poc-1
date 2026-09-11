@@ -179,7 +179,7 @@ sequenceDiagram
     VAD-->>-API: csendhatárok
     API->>+Diar: diarize(audio)
     Diar-->>-API: beszélő-szegmensek
-    par minden szegmensre párhuzamosan
+    loop szegmensenként (a gyakorlatban párhuzamosan fut)
         API->>+Emb: embed(szegmens)
         Emb-->>-API: embedding-vektor
         API->>+Store: legjobb egyezés (cos-sim)
